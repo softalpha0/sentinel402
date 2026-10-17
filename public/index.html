@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sentinel402</title>
+  <style>
+    :root { --bg:#0a0c12; --panel:#121620; --line:#222a38; --text:#e8ebf2; --muted:#8a93a6;
+            --accent:#635bff; --red:#f87171; --green:#34d399; --amber:#fbbf24;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+    header { max-width:1240px; margin:0 auto; padding:28px 16px 4px; display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:end; }
+    h1 { margin:0; font-size:28px; letter-spacing:-.02em; } h1 span { color:var(--accent); }
+    .tag { color:var(--muted); margin:4px 0 0; max-width:720px; }
+    .pill { font-size:12px; border:1px solid var(--line); border-radius:999px; padding:4px 10px; color:var(--muted); white-space:nowrap; }
+    .pill.ready { color:var(--green); border-color:var(--green); }
+    main { max-width:1240px; margin:0 auto; padding:16px; display:grid; gap:16px; grid-template-columns:1fr 1fr; }
+    @media (max-width:900px) { main { grid-template-columns:1fr; } }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; min-width:0; }
+    .panel h2 { margin:0 0 12px; font-size:12px; text-transform:uppercase; letter-spacing:.1em; color:var(--muted); }
+    textarea { width:100%; height:380px; background:#0b0e15; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:12px; font:13px/1.5 var(--mono); resize:vertical; }
+    .row { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; }
+    select, button { font:inherit; border-radius:8px; border:1px solid var(--line); padding:10px 14px; background:#0b0e15; color:var(--text); }
+    button.primary { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; cursor:pointer; flex:1; }
+    button:disabled { opacity:.5; cursor:wait; }
+    #feed { max-height:500px; overflow-y:auto; display:flex; flex-direction:column; gap:8px; font-size:13px; }
+    .ev { border-left:3px solid var(--line); padding:4px 10px; overflow-wrap:anywhere; }
+    .ev.status { color:var(--muted); } .ev.thinking { color:var(--muted); font-style:italic; border-color:#3a4458; }
+    .ev.text { border-color:var(--accent); } .ev.file { border-color:#60a5fa; }
+    .ev.ok { border-color:var(--green); } .ev.fail { border-color:var(--amber); }
+    .ev.finding { border-color:var(--red); background:rgba(248,113,113,.08); }
+    .ev.patched { border-color:var(--green); background:rgba(52,211,153,.08); }
+    .ev.error { border-color:var(--red); color:var(--red); }
+    pre { background:#0b0e15; border:1px solid var(--line); border-radius:8px; padding:10px; overflow-x:auto; font:12px/1.45 var(--mono); max-height:320px; margin:6px 0 0; }
+    summary { cursor:pointer; }
+    #report { grid-column:1/-1; display:none; }
+    .verdict { font-size:22px; font-weight:700; margin-bottom:12px; }
+    .verdict.bad { color:var(--red); } .verdict.good { color:var(--green); }
+    .stats { display:flex; gap:28px; flex-wrap:wrap; margin-bottom:14px; }
+    .stat b { display:block; font-size:26px; } .stat span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.08em; }
+    .card { border:1px solid var(--line); border-radius:10px; padding:12px; margin-bottom:12px; }
+    .sev { display:inline-block; font-size:11px; font-weight:700; text-transform:uppercase; padding:2px 8px; border-radius:999px; margin-right:8px; }
+    .sev.critical,.sev.high { background:var(--red); color:#fff; } .sev.medium { background:var(--amber); color:#000; } .sev.low { background:var(--muted); color:#000; }
+    .ok { color:var(--green); font-weight:600; } .no { color:var(--amber); font-weight:600; }
+    .cols { display:grid; grid-template-columns:1fr 1fr; gap:12px; } @media (max-width:900px) { .cols { grid-template-columns:1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Sentinel<span>402</span></h1>
+      <p class="tag">An AI agent that hacks your smart contract before attackers do. It writes real exploits, runs them in an isolated CreateOS sandbox, reports only the bugs it proved, then patches them and re-runs the attacks.</p>
+    </div>
+    <span class="pill" id="sandbox">sandbox: …</span>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>1 · Your contract</h2>
+      <textarea id="source" spellcheck="false" placeholder="// Paste a Solidity contract, or load a demo below"></textarea>
+      <div class="row">
+        <select id="demo"><option value="">Load a demo contract…</option></select>
+        <button class="primary" id="go">Run exploit-proven audit</button>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>2 · Agent at work · live</h2>
+      <div id="feed"><div class="ev status">Waiting for a contract.</div></div>
+    </section>
+
+    <section class="panel" id="report">
+      <h2>3 · Report</h2>
+      <div class="verdict" id="verdict"></div>
+      <div class="stats" id="stats"></div>
+      <div id="summary"></div>
+      <div id="findings"></div>
+      <h2 style="margin-top:20px">Original vs patched</h2>
+      <div class="cols"><pre id="orig"></pre><pre id="patched"></pre></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" })[c]);
+    let config = {};
+
+    async function refreshConfig() {
+      config = await (await fetch("/api/config")).json();
+      $("sandbox").textContent = `CreateOS sandbox: ${config.sandbox}`;
+      $("sandbox").className = "pill" + (config.sandbox === "ready" ? " ready" : "");
+      if (!$("go").disabled) $("go").textContent = config.paymentsEnabled
+        ? `Pay $${(config.priceCents / 100).toFixed(2)} with Stripe & run audit` : "Run exploit-proven audit";
+    }
+
+    async function init() {
+      await refreshConfig();
+      setInterval(refreshConfig, 5000);
+      for (const d of await (await fetch("/api/demos")).json()) $("demo").add(new Option(d.name, d.source));
+      $("demo").onchange = (e) => { if (e.target.value) $("source").value = e.target.value; };
+
+      const p = new URLSearchParams(location.search);
+      if (p.get("session_id")) {
+        history.replaceState(null, "", "/");
+        const res = await fetch(`/api/checkout/confirm?session_id=${encodeURIComponent(p.get("session_id"))}`);
+        const body = await res.json();
+        if (!res.ok) return add("error", `❌ ${esc(body.error)}`);
+        add("status", "💳 Payment confirmed by Stripe. Starting the agent…");
+        stream(body.auditId, true);
+      } else if (p.get("canceled")) add("error", "Checkout canceled.");
+    }
+
+    $("go").onclick = async () => {
+      $("go").disabled = true;
+      const res = await fetch("/api/audits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ source: $("source").value }) });
+      const body = await res.json();
+      if (!res.ok) { $("go").disabled = false; return add("error", `❌ ${esc(body.error)}`); }
+      if (body.checkoutUrl) location.href = body.checkoutUrl; else stream(body.auditId);
+    };
+
+    function stream(id, keepFeed) {
+      $("go").disabled = true;
+      if (!keepFeed) $("feed").innerHTML = "";
+      $("report").style.display = "none";
+      const es = new EventSource(`/api/audits/${id}/stream`);
+      es.onmessage = (m) => {
+        const ev = JSON.parse(m.data);
+        render(ev);
+        if (ev.type === "done" || ev.type === "error") { es.close(); $("go").disabled = false; refreshConfig(); }
+      };
+    }
+
+    function add(cls, html) {
+      if ($("feed").firstChild?.textContent === "Waiting for a contract.") $("feed").innerHTML = "";
+      const el = document.createElement("div"); el.className = `ev ${cls}`; el.innerHTML = html;
+      $("feed").appendChild(el); $("feed").scrollTop = $("feed").scrollHeight;
+    }
+
+    function render(ev) {
+      switch (ev.type) {
+        case "status": return add("status", `▶ ${esc(ev.message)}`);
+        case "thinking": return add("thinking", `💭 ${esc(ev.text)}`);
+        case "text": return add("text", `🤖 ${esc(ev.text)}`);
+        case "file": return add("file", `<details><summary>📝 Agent wrote <b>${esc(ev.path)}</b></summary><pre>${esc(ev.content)}</pre></details>`);
+        case "run": return add(ev.exitCode === 0 ? "ok" : "fail",
+          `<details><summary>⚙️ <code>${esc(ev.command)}</code> → exit ${ev.exitCode} · ${ev.ms} ms in CreateOS sandbox</summary><pre>${esc(ev.output)}</pre></details>`);
+        case "finding": return add("finding", `🚨 <b>Exploit proven:</b> <span class="sev ${ev.finding.severity}">${ev.finding.severity}</span>${esc(ev.finding.title)}`);
+        case "patched": return add("patched", `✅ Patched <b>${esc(ev.id)}</b>: ${esc(ev.notes)}`);
+        case "error": return add("error", `❌ ${esc(ev.message)}`);
+        case "done": add("status", "🏁 Audit complete."); return report(ev.report);
+      }
+    }
+
+    function report(r) {
+      $("report").style.display = "block";
+      const bad = r.verdict !== "SAFE TO DEPLOY";
+      $("verdict").textContent = bad ? "⛔ FIX BEFORE DEPLOY" : "✅ SAFE TO DEPLOY (no exploit succeeded)";
+      $("verdict").className = "verdict " + (bad ? "bad" : "good");
+      $("stats").innerHTML = `
+        <div class="stat"><b>${r.findings.length}</b><span>proven exploits</span></div>
+        <div class="stat"><b>${r.findings.filter((f) => f.patched).length}</b><span>patched & re-verified</span></div>
+        <div class="stat"><b>${r.sandboxRuns}</b><span>sandbox runs</span></div>`;
+      $("summary").innerHTML = r.summary ? `<p style="white-space:pre-wrap">${esc(r.summary)}</p>` : "";
+      $("findings").innerHTML = r.findings.map((f) => `
+        <div class="card">
+          <span class="sev ${f.severity}">${f.severity}</span><b>${esc(f.title)}</b>
+          ${f.patched ? `<span class="ok"> · patched</span>` : `<span class="no"> · not patched</span>`}
+          <p>${esc(f.description)}</p>
+          ${f.patchNotes ? `<p><b>Fix:</b> ${esc(f.patchNotes)}</p>` : ""}
+          <details><summary>Exploit code (the proof)</summary><pre>${esc(f.exploitTest)}</pre></details>
+        </div>`).join("");
+      $("orig").textContent = r.originalSource;
+      $("patched").textContent = r.patchedSource;
+      $("report").scrollIntoView({ behavior: "smooth" });
+    }
+
+    init();
+  </script>
+</body>
+</html>
